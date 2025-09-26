@@ -37,9 +37,3 @@ jobs:
         with:
           report_paths: '**/test-results-lru.xml'
           check_name: 'LRU Cache Test Report'
-      - name: Report test results (SSML)
-        uses: mikepenz/action-junit-report@v4
-        if: success() || failure()
-        with:
-          report_paths: '**/test-results-ssml.xml'
-          check_name: 'SSML Test Report'
