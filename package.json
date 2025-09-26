@@ -6,8 +6,7 @@
     "start": "npm run test",
     "test": "vitest watch",
     "test:prod": "vitest run --reporter=junit src/lru-cache.test.ts --output-file=test-results-lru.xml ; vitest run --reporter=junit src/ssml.test.ts --output-file=test-results-ssml.xml",
-    "test:lru-cache": "vitest run src/lru-cache.test.ts",
-    "test:ssml": "vitest run src/ssml.test.ts"
+    "test:lru-cache": "vitest run src/lru-cache.test.ts"
   },
   "devDependencies": {
     "@types/node": "^18.11.7",
