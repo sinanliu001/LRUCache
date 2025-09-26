@@ -149,7 +149,7 @@ describe('parseSSML', () => {
       })
     })
 
-    it('should parse self-closing tag', () => {
+    it('should parse self-closing tag #1', () => {
       expect(parseSSML('<speak>Hello<br />World!</speak>')).toEqual({
         name: 'speak',
         attributes: [],

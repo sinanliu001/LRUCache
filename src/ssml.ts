@@ -18,103 +18,100 @@ export function parseSSML(ssml: string): SSMLNode {
   if (!ssml.startsWith('<') || !ssml.endsWith('>')) {
     throw new Error('Invalid SSML: Must start with < and end with >')
   }
-  // Very naive implementation, replace with actual parsing logic
-
-
-  function parseSSMLRecursive(ssml: string): SSMLNode {
-    ssml = ssml.trim();
-    const tagMatch = ssml.match(/<\s*(\w+)([^>]*)>(.*?)<\/\s*\1\s*>/s)
-    fsfasfasfafsdfsdfsfsfdsdfsdfdsfsdfds
-
-    return { name: '', attributes: [], children: [ssml] };
-  }
-  const tagMatch = ssml.match(/^<\s*(\w+)([^>]*)>(.*?)<\/\s*\1\s*>$/s)
+  // Check for single top-level <speak> tag, use greedy match for inner content
+  const tagMatch = ssml.match(/<\s*(\w+)([^>]*)>((?:.*)?)<\/\s*(\w+)\s*>/s)
   if (!tagMatch) {
-    throw new Error('Invalid SSML: Malformed tag')
+    throw new Error('Invalid SSML: No valid tags found')
   }
-  console.log('ssml', ssml, tagMatch);
-  const tagName = tagMatch[1]
-  const attrString = tagMatch[2].trim()
-  const innerContent = tagMatch[3].trim()
-
-  const attributes: SSMLAttribute[] = []
-  if (attrString) {
-    const attrRegex = /([a-zA-Z0-9:_-]+)\s*=\s*"([^"]*)"/g
-    let match
-    while ((match = attrRegex.exec(attrString)) !== null) {
-      attributes.push({ name: match[1], value: match[2] })
-    }
-    const totalAttrLength = attributes.reduce((sum, attr) => sum + attr.name.length + attr.value.length + 3, 0)
-    if (totalAttrLength !== attrString.replace(/\s+/g, '').length) {
-      throw new Error('Invalid SSML: Malformed attributes')
-    }
-  }
-
-  const children: SSMLNode[] = []
-  let remainingContent = innerContent
-  while (remainingContent) {
-    if (remainingContent.startsWith('<')) {
-      const childTagMatch = remainingContent.match(/^<\s*([a-zA-Z0-9:_-]+)([^>]*)>(.*?)(<\/\s*\1\s*>|\/>)/s)
-      if (!childTagMatch) {
-        throw new Error('Invalid SSML: Malformed child tag')
-      }
-      const childTagName = childTagMatch[1]
-      const childAttrString = childTagMatch[2].trim()
-      const childInnerContent = childTagMatch[3].trim()
-      const childClosingTag = childTagMatch[4]
-
-      const childAttributes: SSMLAttribute[] = []
-      if (childAttrString) {
-        const childAttrRegex = /([a-zA-Z0-9:_-]+)\s*=\s*"([^"]*)"/g
-        let childMatch
-        while ((childMatch = childAttrRegex.exec(childAttrString)) !== null) {
-          childAttributes.push({ name: childMatch[1], value: childMatch[2] })
-        }
-        const totalChildAttrLength = childAttributes.reduce((sum, attr) => sum + attr.name.length + attr.value.length + 3, 0)
-        if (totalChildAttrLength !== childAttrString.replace(/\s+/g, '').length) {
-          throw new Error('Invalid SSML: Malformed child attributes')
-        }
-      }
-
-      if (childClosingTag === '/>') {
-        children.push({ name: childTagName, attributes: childAttributes, children: [] })
-        remainingContent = remainingContent.slice(childTagMatch[0].length).trim()
-      } else {
-        const closingTagIndex = remainingContent.indexOf(`</${childTagName}>`)
-        if (closingTagIndex === -1) {
-          throw new Error('Invalid SSML: Missing closing tag for child')
-        }
-        const fullChildTag = remainingContent.slice(0, closingTagIndex + childTagName.length + 3)
-        children.push({
-          name: childTagName,
-          attributes: childAttributes,
-          children: [unescapeXMLChars(childInnerContent)],
-        })
-        remainingContent = remainingContent.slice(fullChildTag.length).trim()
-      }
-    } else {
-      const textEndIndex = remainingContent.indexOf('<')
-      if (textEndIndex === -1) {
-        children.push(unescapeXMLChars(remainingContent))
-        remainingContent = ''
-      } else {
-        const textContent = remainingContent.slice(0, textEndIndex)
-        children.push(unescapeXMLChars(textContent))
-        remainingContent = remainingContent.slice(textEndIndex).trim()
-      }
-    }
-  }
-
+  const tagName = tagMatch[1];
+  const closingTagName = tagMatch[4];
   if (tagName !== 'speak') {
     throw new Error('Invalid SSML: Root tag must be <speak>')
   }
+  if (tagName !== closingTagName) {
+    throw new Error('Invalid SSML: Mismatched closing tag or multiple top-level tags')
+  }
 
-  return { name: tagName, attributes, children };
+  function parseSSMLRecursive(ssml: string): SSMLNode {
+    const tagMatch = ssml.match(/<\s*(\w+)([^>]*)>(.*?)<\/\s*\1\s*>/s) || ssml.match(/<\s*(\w+)((?:.*)?)()\/>/s)
+    if (!tagMatch) {
+      return ssml;
+    }
+
+    const tagName = tagMatch[1];
+    const attrString = tagMatch[2].trim() || '';
+    const attributesParsed = attrString ? attrString.trim().match(/([\w:]+)\s*(=\s*(["'])(.*?)\3)*/g) : []
+    const attributesArray: SSMLAttribute[] = attributesParsed ? (attributesParsed.map(attr => {
+      const [name, value] = attr.split('=');
+      if (value === undefined) {
+        throw new Error('Invalid SSML: Attribute without value');
+      }
+      return { name: name.trim(), value: value.trim().slice(1, -1) };
+    })) : [];
+    const innerContent: string | undefined = tagMatch[3];
+    if (innerContent.includes('<') && innerContent.includes('>')) {
+      const splitInnerContent = innerContent.split(/(<[^>]+>)/g).filter(part => part.length > 0);
+      const children: string[] = [];
+      let successor = '';
+      for (const part of splitInnerContent) {
+        if (part.startsWith('<') && part.endsWith('>')) {
+          if (successor.length == 0) {
+            // Check for closing tag
+            if (/<\s*\/\s*\w+\s*>/s.test(part)) {
+              throw new Error('Invalid SSML: Mismatched closing tag or multiple top-level tags');
+            }
+            if (/<\s*\w+((?:.*)?)\/>/s.test(part)) {
+              // self-closing tag
+              children.push(part);
+              continue;
+            }
+            // opening tag
+            const childNode = part.match(/<\s*(\w+)([^>]*)>/s);
+            successor = childNode ? childNode[1] : '';
+            children.push(part);
+          } else {
+            const childNode = part.match(/<\s*\/\s*(\w+)\s*>/s);
+            const closingTagName = childNode ? childNode[1] : '';
+            if (closingTagName === successor) {
+              successor = '';
+            }
+            children[children.length - 1] += part;
+          }
+        } else {
+          if (!successor) {
+            children.push(part);
+          } else {
+            children[children.length - 1] += part;
+          }
+        }
+      }
+      if (successor.length > 0) {
+        throw new Error('Invalid SSML: Mismatched closing tag or multiple top-level tags');
+      }
+      return {
+        name: tagName,
+        attributes: attributesArray,
+        children: children.map(part => parseSSMLRecursive(part)),
+      };
+    }
+    return {
+      name: tagName,
+      attributes: attributesArray,
+      children: innerContent ? [parseSSMLRecursive(innerContent)] : [],
+    }
+  }
+  return parseSSMLRecursive(ssml);
 }
 
 /** Recursively converts SSML node to string and unescapes XML chars */
 export function ssmlNodeToText(node: SSMLNode): string {
-  return ''
+  if (typeof node === 'string') {
+    return node;
+  }
+  if (node.children.length === 0) {
+    return '';
+  }
+  return node.children.map(ssmlNodeToText).join('');
 }
 
 // Already done for you
